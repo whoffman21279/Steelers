@@ -1,0 +1,183 @@
+#Step 1: Getting and cleaning the data. This is slightly different from Ben's tutorial. We create a stick_throw variable, which 
+#sorts each pass by whether or not they're past the sticks. We also create a distance_summary for third downs, which classifies 
+each play as 3rd and short, 3rd and medium, or 3rd and long.
+
+library(nflscrapR)
+pbp_data <- scrape_season_play_by_play(2019)
+pbp_rp <- pbp_data %>% 
+  filter(!is_na(epa), play_type=="no_play" | play_type=="pass" | play_type=="run")
+
+pbp_rp <- pbp_rp %>%
+  mutate(
+    pass = if_else(str_detect(desc, "(pass)|(sacked)|(scramble)"), 1, 0),
+    rush = if_else(str_detect(desc, "(left end)|(left tackle)|(left guard)|(up the middle)|(right guard)|(right tackle)|(right end)") & pass == 0, 1, 0),
+    success = ifelse(epa>0, 1 , 0),
+    stick_throw = case_when(
+      air_yards < ydstogo ~ "Short of Sticks",
+      air_yards == ydstogo ~ "At Sticks",
+      air_yards > ydstogo ~ "Past Stick",
+      TRUE ~ NA_character_
+    ),
+    yards_past_stick = air_yards - ydstogo
+  ) 
+
+pbp_rp_dd <- pbp_rp %>%
+  filter(down == 3) %>%
+  mutate(
+    distance_summary = case_when(ydstogo == 1 | ydstogo == 2 ~ "3rd and Short",
+                                 ydstogo >= 3 & ydstogo <= 7 ~ "3rd and Medium",
+                                 ydstogo >=8 ~ "3rd and Long")
+  )
+
+pbp_rp <- pbp_rp %>% filter(pass==1 | rush==1)
+
+#EPA by distance thrown graph
+
+pbp_rp %>%
+  filter(down == 3) %>%
+  group_by(stick_throw) %>%
+  filter(!is.na(stick_throw)) %>%
+  summarize(mean_epa = mean(epa)) %>%
+  ggplot(aes(x = stick_throw, y = mean_epa)) + 
+  geom_bar(stat = "identity", color = "black", fill = "gray40") + 
+  labs(x = "Pass Location", 
+       y = "Mean EPA",
+       title = "EPA by distance thrown",
+       subtitle = "3rd down",
+       caption = "Chart from @steelRstats | Data from nflscrapR") + 
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5),
+        plot.subtitle = element_text(size = 14, hjust = 0.5),
+        plot.caption = element_text(size = 12))
+        
+#Steelers 3rd Downs by Depth of Target
+
+pbp_rp %>%
+  filter(down == 3) %>%
+  filter(posteam == "PIT") %>%
+  group_by(stick_throw) %>%
+  filter(!is.na(stick_throw)) %>%
+  summarize(targets = n()) %>% 
+  ggplot(aes(x = stick_throw, y = targets)) + 
+  geom_bar(stat = "identity", color = "black", fill = "gold") + 
+  labs(x = "Pass Location", 
+       y = "Attempts",
+       title = "Steelers 3rd Downs by Depth of Target",
+       subtitle = "3rd down",
+       caption = "Chart from @steelRstats | Data from nflscrapR") + 
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5),
+        plot.subtitle = element_text(size = 14, hjust = 0.5),
+        plot.caption = element_text(size = 12))
+        
+#Success Rate by yards past the sticks
+#We need to gather and clean 2018 data for this
+
+pbp_2018 <- read_csv(url("https://github.com/ryurko/nflscrapR-data/raw/master/play_by_play_data/regular_season/reg_pbp_2018.csv"))
+
+pbp_rp_2018 <- pbp_2018 %>% 
+  filter(!is_na(epa), play_type=="no_play" | play_type=="pass" | play_type=="run")
+
+pbp_rp_2018 <- pbp_rp_2018 %>%
+  mutate(
+    pass = if_else(str_detect(desc, "(pass)|(sacked)|(scramble)"), 1, 0),
+    rush = if_else(str_detect(desc, "(left end)|(left tackle)|(left guard)|(up the middle)|(right guard)|(right tackle)|(right end)") & pass == 0, 1, 0),
+    success = ifelse(epa>0, 1 , 0),
+    stick_throw = case_when(
+      air_yards < ydstogo ~ "Short of Sticks",
+      air_yards == ydstogo ~ "At Sticks",
+      air_yards > ydstogo ~ "Past Stick",
+      TRUE ~ NA_character_
+    ),
+    yards_past_stick = air_yards - ydstogo
+  ) 
+
+pbp_rp_dd_2018 <- pbp_rp_2018 %>%
+  filter(down == 3) %>%
+  mutate(
+    distance_summary = case_when(ydstogo == 1 | ydstogo == 2 ~ "3rd and Short",
+                                 ydstogo >= 3 & ydstogo <= 7 ~ "3rd and Medium",
+                                 ydstogo >=8 & ydstogo <= 20 ~ "3rd and Long")
+  )
+
+pbp_rp_2018 <- pbp_rp_2018 %>% filter(pass==1 | rush==1)
+
+pbp_rp_2018 %>%
+  filter(down == 3) %>%
+  filter(ydstogo <= 20) %>%
+  group_by(yards_past_stick) %>%
+  filter(!is.na(yards_past_stick)) %>%
+  summarize(success_rate = mean(success)) %>%
+  ggplot(aes(x = yards_past_stick, y = success_rate)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", se = FALSE) + 
+  geom_hline(yintercept = mean(pbp_rp_2018$success), linetype = "dashed", color = "red") + 
+  labs(x = "Yards past the sticks",
+       y = "Success Rate",
+       title = "Where should the ball be thrown on third down?",
+       subtitle = "Third downs 2018, 3rd and 20 or shorter",
+       caption = "Graph by @steelRstats | Data from nflscrapR") + 
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5),
+        plot.subtitle = element_text(size = 14, hjust = 0.5),
+        plot.caption = element_text(size = 12))
+        
+#Third downs by distance. 
+
+chart <- pbp_rp_dd_2018 %>%
+  group_by(distance_summary, yards_past_stick) %>%
+  summarize(mean_success = mean(success), plays = n())
+
+chart %>%
+  filter(!is.na(distance_summary)) %>%
+  ggplot(aes(x = yards_past_stick, y = mean_success, color = distance_summary)) + 
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") + 
+  geom_hline(yintercept = mean(pbp_rp_dd_2018$success), linetype = "dashed", color = "red") + 
+  geom_smooth(method = loess, se = FALSE) + 
+  theme_minimal() + 
+  theme(plot.title = element_text(size = 16, hjust = 0.5)) + 
+  labs(x = "Yards Past the Sticks",
+       y = "Success Rate",
+       title = "Where should the ball be thrown on third downs?",
+       caption = "Graph by @steelRstats | Data from nflscrapR") + 
+  ggsci::scale_color_locuszoom(name = "3rd Down Distance")
+ 
+
+#Not related to third downs at all, but here's my code for offensive and defensive EPA by teams
+offensive_epa <- pbp_players %>%
+  group_by(posteam) %>%
+  summarize(team_off_epa = mean(epa))
+
+defensive_epa <- pbp_players %>%
+  group_by(defteam) %>%
+  summarize(team_def_epa = mean(epa))
+
+colnames(offensive_epa)[1] <- "team"
+colnames(defensive_epa)[1] <- "team"
+
+merged <- merge(offensive_epa, defensive_epa, by = "team")
+
+nfl_logos_df <- read_csv("https://raw.githubusercontent.com/statsbylopez/BlogPosts/master/nfl_teamlogos.csv")
+merged_data <- merged %>%
+  left_join(nfl_logos_df, by = c("team" = "team_code"))
+
+merged_data %>%
+  ggplot(aes(x = team_off_epa, y = team_def_epa)) + 
+  scale_y_reverse() + 
+  geom_image(aes(image = url), size = 0.05) + 
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") + 
+  labs(x = "Team offensive EPA/play", 
+       y = "Team defensive EPA/play",
+       caption = "Data from nflscrapR", 
+       title = "Team Offensive and Defensive EPA",
+       subtitle = "Through Week 1") + 
+  theme_bw() + 
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5),
+        plot.subtitle = element_text(size = 14, hjust = 0.5),
+        plot.caption = element_text(size = 12))
