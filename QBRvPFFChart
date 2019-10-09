@@ -1,0 +1,118 @@
+#As usual, pbp_players can be found from Ben's nflscrapR tutorial
+
+qbs_epa <- pbp_players %>% 
+  mutate(
+    name = ifelse(!is_na(passer_player_name), passer_player_name, rusher_player_name),
+    rusher = rusher_player_name,
+    receiver = receiver_player_name,
+    play = 1
+  ) %>%
+  group_by(name, posteam) %>%
+  filter(!is.na(air_yards)) %>%
+  summarize (
+    n_dropbacks = sum(pass),
+    n_rush = sum(rush),
+    n_plays = sum(play),
+    epa_per_play = sum(epa)/n_plays,
+    success_per_play =sum(success)/n_plays,
+    aDOT = mean(air_yards)
+  ) 
+#qbs is a csv file that I import into my code. The Week 5 csv file can be found here:
+#https://raw.githubusercontent.com/whoffman21279/Steelers/master/qbs.csv
+
+quarterbacks <- merge(qbs, qbs_epa, by = c("name", "posteam"))
+nfl_colors <- teamcolors %>%
+  filter(league == "nfl") %>%
+  mutate(team_abb = case_when(
+      name == "Arizona Cardinals" ~ "ARI",
+      name == "Atlanta Falcons" ~ "ATL",
+      name == "Baltimore Ravens" ~ "BAL",
+      name == "Buffalo Bills" ~ "BUF",
+      name == "Carolina Panthers" ~ "CAR",
+      name == "Chicago Bears" ~ "CHI",
+      name == "Cincinnati Bengals" ~ "CIN",
+      name == "Cleveland Browns" ~ "CLE",
+      name == "Dallas Cowboys" ~ "DAL",
+      name == "Denver Broncos" ~ "DEN",
+      name == "Detroit Lions" ~ "DET",
+      name == "Green Bay Packers" ~ "GB",
+      name == "Houston Texans" ~ "HOU",
+      name == "Indianapolis Colts" ~ "IND",
+      name == "Jacksonville Jaguars" ~ "JAX",
+      name == "Kansas City Chiefs" ~ "KC",
+      name == "Los Angeles Rams" ~ "LA",
+      name == "Los Angeles Chargers" ~ "LAC",
+      name == "Miami Dolphins" ~ "MIA",
+      name == "Minnesota Vikings" ~ "MIN",
+      name == "New England Patriots" ~ "NE",
+      name == "New Orleans Saints" ~ "NO",
+      name == "New York Giants" ~ "NYG",
+      name == "New York Jets" ~ "NYJ",
+      name == "Oakland Raiders" ~ "OAK",
+      name == "Philadelphia Eagles" ~ "PHI",
+      name == "Pittsburgh Steelers" ~ "PIT",
+      name == "Seattle Seahawks" ~ "SEA",
+      name == "San Francisco 49ers" ~ "SF",
+      name == "Tampa Bay Buccaneers" ~ "TB",
+      name == "Tennessee Titans" ~ "TEN",
+      name == "Washington Redskins" ~ "WAS",
+      TRUE ~ NA_character_
+    ),
+    posteam = team_abb
+  )
+
+qbs_color <- merge(quarterbacks, nfl_colors, by = "posteam")
+
+#This next code is a function made by @LeeSharpeNFL, which checks for how bright the 
+#team color is. This will make it so our plot doesn't have a lot of dark blue/black dots
+#on it.
+
+brightness <- function(hex)
+{
+  result <- rep(0, length(hex))
+  for (i in 2:7)
+  {
+    ch <- substr(hex, i, i)
+    result <- result + ifelse(i %% 2 == 0, 16, 1) * case_when(
+      ch == "0" ~ 0,
+      ch == "1" ~ 1,
+      ch == "2" ~ 2,
+      ch == "3" ~ 3,
+      ch == "4" ~ 4,
+      ch == "5" ~ 5,
+      ch == "6" ~ 6,
+      ch == "7" ~ 7,
+      ch == "8" ~ 8,
+      ch == "9" ~ 9,
+      ch == "a" | ch == "A" ~ 10,
+      ch == "b" | ch == "B" ~ 11,
+      ch == "c" | ch == "C" ~ 12,
+      ch == "d" | ch == "D" ~ 13,
+      ch == "e" | ch == "E" ~ 14,
+      ch == "f" | ch == "F" ~ 15,
+      TRUE ~ 0
+    )
+  }
+  return(result)
+}
+
+qbs_color %>%
+  ggplot(aes(x = qbr, y = pff_grade)) + 
+  geom_point(size = (qbs_color$n_dropbacks)/25, color = ifelse(brightness(qbs_color$primary) > 64 & qbs_color$posteam != "SEA", qbs_color$primary, qbs_color$secondary), alpha = 0.8) +
+  geom_text_repel(aes(label = name.x), size = 4, color = "black") + 
+  geom_hline(yintercept = mean(qbs_color$pff_grade), linetype = "dashed", color = "red") + 
+  geom_vline(xintercept = mean(qbs_color$qbr), linetype = "dashed", color = "red") + 
+  labs(x = "QBR",
+       y = "PFF Grade",
+       title = "QBs QBR vs. PFF Grade",
+       subtitle = "Through Week 5",
+       caption = "Data from PFF, ESPN, and nflscrapR") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        plot.title = element_text(size = 12, hjust = 0.5),
+        plot.subtitle = element_text(size = 10, hjust = 0.5),
+        plot.caption = element_text(size = 8))
+
+
+    
